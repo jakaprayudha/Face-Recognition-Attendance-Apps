@@ -3,7 +3,8 @@ import csv
 import os
 import numpy as np
 from datetime import datetime
-from flask import Flask, render_template, Response, jsonify
+from flask import Flask, render_template, Response, jsonify, request
+from db.connect import get_connection
 
 app = Flask(__name__)
 
@@ -29,17 +30,14 @@ if not dataset:
 mean_face = np.mean(dataset, axis=0)
 print("Template wajah (mean bbox):", mean_face)
 
-# Load Haarcascade
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
-# ======== Variabel global status ========
-last_status = {"recognized": False, "distance": None}
-
-# Buat folder simpanan kalau belum ada
 SAVE_DIR = "captures"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
-# ======== Video generator ==========
+# ======== Variabel global status ========
+last_status = {"recognized": False, "distance": None, "face_detected": False}
+
 def generate_frames():
     global last_status
     cap = cv2.VideoCapture(1)
@@ -54,8 +52,10 @@ def generate_frames():
 
         recognized = False
         distance_val = None
+        face_detected = False
 
         for (x, y, w, h) in faces:
+            face_detected = True
             detected_face = np.array([x, y, w, h])
             dist = np.linalg.norm(detected_face - mean_face)
             distance_val = float(dist)
@@ -69,34 +69,21 @@ def generate_frames():
                 color = (0, 0, 255)
                 label = f"Tidak Dikenali ({dist:.1f})"
 
-                # 🚨 Capture wajah tidak dikenali
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = os.path.join(SAVE_DIR, f"unknown_{timestamp}.jpg")
-
-                # Tambahkan watermark timestamp
-                watermark = f"Unknown {timestamp}"
-                cv2.putText(frame, watermark, (10, frame.shape[0] - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-
-                cv2.imwrite(filename, frame)
-                print(f"[INFO] Disimpan: {filename}")
-
-            # Gambar kotak + label
             cv2.rectangle(frame, (x, y), (x+w, y+h), color, 2)
             cv2.putText(frame, label, (x, y-10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
-        # update status global
-        last_status["recognized"] = recognized
-        last_status["distance"] = distance_val
+        last_status.update({
+            "recognized": recognized,
+            "distance": distance_val,
+            "face_detected": face_detected
+        })
 
-        # Encode ke JPEG
         ret, buffer = cv2.imencode('.jpg', frame)
         frame = buffer.tobytes()
 
         yield (b'--frame\r\n'b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
-# ======== Routes Flask ==========
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -106,10 +93,34 @@ def video_feed():
     return Response(generate_frames(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
-# ✅ Route baru untuk status JSON
 @app.route('/status')
 def status():
     return jsonify(last_status)
+
+# ======== API untuk Simpan Absensi ========
+@app.route('/checkin', methods=['POST'])
+def checkin():
+    data = request.get_json()
+    nama = data.get("nama", "Unknown")
+    latitude = data.get("latitude")
+    longitude = data.get("longitude")
+    recognized = last_status.get("recognized")
+    distance = last_status.get("distance")
+
+    if not last_status.get("face_detected"):
+        return jsonify({"status": "error", "message": "Tidak ada wajah terdeteksi!"})
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO absensi (nama, waktu_checkin, latitude, longitude, distance, recognized) VALUES (%s,%s,%s,%s,%s,%s)",
+        (nama, datetime.now(), latitude, longitude, distance, recognized)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({"status": "success", "message": "Absensi berhasil disimpan!"})
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5001)
