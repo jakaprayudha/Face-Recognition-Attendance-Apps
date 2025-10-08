@@ -3,10 +3,16 @@ import csv
 import os
 import numpy as np
 from datetime import datetime
-from flask import Flask, render_template, Response, jsonify, request
+from dotenv import load_dotenv
+import os
+from flask import Flask, render_template, Response, jsonify, request, redirect, url_for, session
 from db.connect import get_connection
+from hashlib import sha256
 
 app = Flask(__name__)
+
+load_dotenv()
+app.secret_key = os.getenv("SECRET_KEY")
 
 # ======== Load dataset CSV ==========
 dataset_file = "deteksi_wajah.csv"
@@ -83,10 +89,40 @@ def generate_frames():
         frame = buffer.tobytes()
 
         yield (b'--frame\r\n'b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        conn = get_connection()
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM users WHERE username = %s", (username,))
+        user = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if user and user['password_hash'] == sha256(password.encode()).hexdigest():
+            session['user_id'] = user['id']
+            session['username'] = user['username']
+            session['role'] = user['role']
+            session['full_name'] = user['full_name']
+            return redirect(url_for('index'))
+        else:
+            return render_template('login.html', error="Username atau password salah")
+
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    return render_template('index.html', username=session['full_name'])
 
 @app.route('/video_feed')
 def video_feed():
@@ -124,8 +160,9 @@ def checkin():
 
 @app.route('/map')
 def map_view():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
     return render_template('map.html')
-
 
 @app.route('/data_absensi')
 def data_absensi():
