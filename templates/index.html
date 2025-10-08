@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Face Recognition Test</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background-color: #f8f9fa;
+    }
+    .video-container {
+      text-align: center;
+      margin-top: 20px;
+    }
+    img {
+      border-radius: 15px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    }
+    /* Toast container di kanan atas */
+    .toast-container {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      z-index: 1055;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2 class="text-center mt-3">Face Recognition (ImZack Developer)</h2>
+    
+    <div class="video-container">
+      <img src="{{ url_for('video_feed') }}" width="640" height="480">
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container">
+    <!-- Toast untuk Tidak Dikenali -->
+    <div id="toast-danger" class="toast align-items-center text-bg-danger border-0" role="alert">
+      <div class="d-flex">
+        <div class="toast-body">❌ Wajah Tidak Dikenali!</div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+      </div>
+    </div>
+
+    <!-- Toast untuk Dikenali -->
+    <div id="toast-success" class="toast align-items-center text-bg-success border-0" role="alert">
+      <div class="d-flex">
+        <div class="toast-body">✅ Wajah Dikenali!</div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    const toastSuccess = new bootstrap.Toast(document.getElementById("toast-success"));
+    const toastDanger = new bootstrap.Toast(document.getElementById("toast-danger"));
+
+    // Polling status deteksi dari server
+    setInterval(() => {
+      fetch("/status")   // ⚠️ Pastikan Flask punya endpoint /status
+        .then(res => res.json())
+        .then(data => {
+          if (data.recognized) {
+            toastDanger.hide();
+            toastSuccess.show();
+          } else {
+            toastSuccess.hide();
+            toastDanger.show();
+          }
+        })
+        .catch(err => console.error(err));
+    }, 2000);
+  </script>
+</body>
+</html>
