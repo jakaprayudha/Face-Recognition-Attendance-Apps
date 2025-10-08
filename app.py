@@ -122,5 +122,20 @@ def checkin():
 
     return jsonify({"status": "success", "message": "Absensi berhasil disimpan!"})
 
+@app.route('/map')
+def map_view():
+    return render_template('map.html')
+
+
+@app.route('/data_absensi')
+def data_absensi():
+    conn = get_connection()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT * FROM absensi ORDER BY waktu_checkin DESC")
+    data = cur.fetchall()
+    cur.close()
+    conn.close()
+    return jsonify(data)
+
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5001)
